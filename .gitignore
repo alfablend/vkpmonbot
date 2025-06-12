@@ -1,0 +1,11 @@
+*.pdf
+*.jpg
+*.json
+*.csv
+/tmp/
+vkp_app/database/gike_files/*
+temp_txt.txt
+token.txt
+*.py[cod]
+__pycache__/
+*.csv#

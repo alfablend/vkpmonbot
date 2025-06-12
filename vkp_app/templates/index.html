@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<!-- https://www.geeksforgeeks.org/how-to-define-two-column-layout-using-flexbox/ --> 
+<!-- Фильтр для замены пробелов --> 
+
+  <head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+  body {
+  margin: 0;
+}
+
+	* {
+  box-sizing: border-box;
+	}
+	
+    .header	{
+			
+			align-items: left;
+            background-color: #D9AB35;
+			margin-left: 0px;
+			margin-left: 0px;
+			margin-right: 0px;
+				
+        }
+	
+	.column1 {
+
+		float: left;
+		width: 70%;
+		}
+
+	.column2 {
+		float: left;
+		width: 30%;
+		height: 300px; /* Should be removed. Only for demonstration */
+
+		}
+    
+	.row:after {
+		content: "";
+		display: table;
+		clear: both;
+		}
+	
+	
+	.item {
+	
+			margin-top: 20px;
+			margin-left: 100px;
+			margin-right: 2%;
+			
+			padding-top: 15px;
+			padding-left: 100px;
+			padding-right: 55px;
+			padding-down:  75px;
+			
+			font-size: larger;
+			line-height: 1.5;
+			
+            background-color: #F9F2E1;
+			border: 1px solid #E9CE8B;
+        }
+		
+		
+	.button {
+		 
+		 background-color: #352909;
+		 border: none;
+		 color: white;
+		 padding: 15px 32px;
+		 text-align: center;
+		 text-decoration: none;
+		 display: inline-block;
+		 font-size: 16px;
+		 margin: 4px 2px;
+		 margin-left: 100px;
+		 cursor: pointer;
+		}
+	<!--Полоса загрузки - код стилей-->
+	<!--https://stackoverflow.com/questions/24251898/flask-app-update-progress-bar-while-function-runs-->
+	.progress {
+		display: flex;
+		position: absolute;
+		height: 100%;
+		width: 100%;
+	  }
+	  
+	.status {
+		margin: auto;
+	}
+
+	.status h3 {
+		font-weight: bold;
+	}		
+		
+			
+  </style>
+  
+  <title>ВКП</title>
+  
+  </head>
+  <body>
+		
+        <header class="header">
+			<a href="restart" class="button">Обновить всё</a>
+			<a href="repair" class="button">Исправить</a>
+		</header> 
+		
+		 
+		<div class="row">
+			<div class="column1">
+				{% for post in posts %} 
+					{% if "fontan" in post.type %}
+						<div class="item">
+							<div style='text-align:right; width:100%'> <p> <i>{{post.date}}</i></p></div>
+							<div style='text-align:center; width:100%'><a href="{{post.link}}">"Фонтанка"</a></div>
+							<!-- Если предусмотрена картинка, вставляем на нее ссылку -->
+							
+							{% for paragraph in post.text %}
+									{{paragraph}}<br>
+							{% endfor %}
+						</div>
+					{% elif "gasn" in post.type%}
+						<div class="item">
+							<div style='text-align:right; width:100%'> <p> <i>{{post.date}}</i></p></div>
+							<div style='text-align:center; width:100%'><a href="{{post.link}}">Разрешение Госстройнадзора</a></div>
+							{% for paragraph in post.text %}
+									{{paragraph}}<br>
+							{% endfor %}
+						</div>		
+					{% elif "slush" in post.type%}
+						<div class="item">
+							<div style='text-align:right; width:100%'> <p> <i>{{post.date}}</i></p></div>
+							<div style='text-align:center; width:100%'><a href="{{post.link}}">Общественные слушания</a></div>
+							{% for paragraph in post.text %}
+									{{paragraph}}<br>
+							{% endfor %}
+						</div>			
+					{% elif "dp" in post.type%}
+						<div class="item">
+							<div style='text-align:right; width:100%'> <p> <i>{{post.date}}</i></p></div>
+							<div style='text-align:center; width:100%'><a href="{{post.link}}">"ДП"</a></div>
+							{% for paragraph in post.text %}
+									{{paragraph}}<br>
+							{% endfor %}
+						</div>	
+					{% elif "egrz" in post.type%}
+							<div class="item">
+							<div style='text-align:right; width:100%'> <p> <i>{{post.date}}</i></p></div>
+							<div style='text-align:center; width:100%'><a href="{{post.link}}">Заключение ЕГРЗ</a></div>
+							{% for paragraph in post.text %}
+									{{paragraph}}<br>
+							{% endfor %}
+						</div>	
+					{% elif "antikor" in post.type%}
+						<div class="item">
+							<div style='text-align:right; width:100%'> <p> <i>{{post.date}}</i></p></div>
+							<div style='text-align:center; width:100%'><a href="{{post.link}}">Антикоррупционная экспертиза</a></div>
+							{% for paragraph in post.text %}
+									{{paragraph}}<br>
+							{% endfor %}
+						</div>
+					{% elif "opub" in post.type%}
+						<div class="item">
+							<div style='text-align:right; width:100%'> <p> <i>{{post.date}}</i></p></div>
+							<div style='text-align:center; width:100%'><a href="{{post.link}}">Официальное электронное опубликование</a></div>
+							{% for paragraph in post.text %}
+									{{paragraph}}<br>
+							{% endfor %}
+						</div>
+					{% elif "zakupki" in post.type%}
+						<div class="item">
+							<div style='text-align:right; width:100%'> <p> <i>{{post.date}}</i></p></div>
+							<div style='text-align:center; width:100%'><a href="{{post.link}}">Закупка</a></div>
+							{% for paragraph in post.text %}
+									{{paragraph}}<br>
+							{% endfor %}
+						</div>
+					{% elif "arbitr" in post.type%}
+						<div class="item">
+							<div style='text-align:right; width:100%'> <p> <i>{{post.date}}</i></p></div>
+							<div style='text-align:center; width:100%'><a href="{{post.link}}">Арбитражное дело</a></div>
+							{% for paragraph in post.text %}
+									{{paragraph}}<br>
+							{% endfor %}
+						</div>	
+					{% elif "gike" in post.type%}
+						<div class="item">
+							<div style='text-align:right; width:100%'> <p> <i>{{post.date}}</i></p></div>
+							<div style='text-align:center; width:100%'><a href="{{post.link}}">Историко-культурная экспертиза</a></div>
+							
+							<!--Если в базе есть картинка, длина значение не является 'nan' -->
+							{% if post.unique_filename|string|length > 4 %}
+								<center>
+								<p>
+								<img
+								src='/get_image/{{post.type}}_files&{{post.unique_filename}}'
+								width="70%" height="70%" style="display: block"
+								  alt='Изображение к новости' /></p>
+								</center>
+							
+							{% endif %}	
+							
+							{% for paragraph in post.text %}
+									{{paragraph}}<br>
+							{% endfor %}
+							
+						</div>	
+						
+					{% else %}
+						<div class="item">
+							<div style='text-align:right; width:100%'> <p> <i>{{post.date}}</i></p></div>
+							<div style='text-align:center; width:100%'><a href="{{post.link}}">{{post.type}}</a></div>
+							{% for paragraph in post.text %}
+									{{paragraph}}<br>
+							{% endfor %}
+						</div>
+					{% endif %}	
+				{% endfor %}
+			</div>
+			<div class="column2">	
+				<div class="item" style="padding:5px; background-color: #f2f2f2; margin-left: 50px; margin-right: 25px;" >
+				<!--Полоса загрузки - статичная часть кода -->
+				 <!--https://stackoverflow.com/questions/24251898/flask-app-update-progress-bar-while-function-runs-->
+					<div class="progress">
+						<div class="status">
+						  <h3 id="innerStatus">Добро пожаловать!</h3>
+						</div>
+					  </div>					
+					<hr>
+					<div>Всего записей: {{count_of_posts}}</div>
+					<hr>
+					<div> Совет: используйте клавишу tab для быстрого перехода между записями</div>
+				</div>
+			</div>	
+		</div>
+		
+		
+		
+		</div>
+  </body>
+  
+ <!--Полоса загрузки - код скрипта-->
+ <!--https://stackoverflow.com/questions/24251898/flask-app-update-progress-bar-while-function-runs-->
+
+<script>
+var timeout;
+
+var progress;
+
+async function getStatus() {
+
+  let get;
+  
+  try {
+	const res = await fetch("/status");
+	get = await res.json();
+  } catch (e) {
+	console.error("Error: ", e);
+  }
+
+  progress = (get.status / {{total_mons}}) * 100;
+  
+  document.getElementById("innerStatus").innerHTML = "Собрано " + progress  + "&percnt; " + "данных";
+  
+  if (progress == 100){
+    document.getElementById("innerStatus").innerHTML += " Сбор данных завершён";
+    clearTimeout(timeout);
+    return false;
+  }
+   
+  timeout = setTimeout(getStatus, 5000);
+}
+
+getStatus();
+</script>
+  
+  
+</html>
+
+
+ <!----> 
