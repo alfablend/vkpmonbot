@@ -1,7 +1,7 @@
 #Модуль отправки в телеграм
 #Также он готовит текст к отправке, сокращая его
 
-import vkp_app.vkp_settings
+import vkp_app.vkp_settings as settings
 from vkp_app.vkp_plotmap import plotmap
 
 import re, json
@@ -20,11 +20,12 @@ import copy
 from collections import OrderedDict
 import numpy as np
 
-with open('token.txt', 'r') as f:
-    token=f.read()
+token = settings.TOKEN
+
 try:    
     bot = telebot.TeleBot(token=token)
-except: print('Не указан ключ для телеграм-бота, бот не инициализирован')
+except: 
+    print('Не указан ключ для телеграм-бота, бот не инициализирован')
 
 #Если строка длиннее заданного числа знаков, обрезаем целиком последнее слово
 def string_shorter(txt, length): 

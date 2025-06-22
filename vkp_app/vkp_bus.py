@@ -10,4 +10,5 @@ class UserStopError(Exception):
     
 stop=False #Флаг остановки сбора информации
 finish=False #Флаг завершения сбора информации 
-auto_run=True #Флаг первого запуска
+auto_run=False #Флаг первого запуска
+force_run = False

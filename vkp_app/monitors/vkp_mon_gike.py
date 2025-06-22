@@ -1,69 +1,39 @@
-
-import vkp_app.vkp_bus as bus #Шина обмена данными
+import vkp_app.vkp_bus as bus
 import vkp_app.vkp_settings
-import vkp_app.vkp_db as db #База данных
-from  vkp_app.vkp_logging import log #Подключение модуля вывода сообщений
-import vkp_app.vkp_extract #Обработка PDF и подготовка миниатюр для ГИКЭ
+import vkp_app.vkp_db as db
+import vkp_app.vkp_extract
 import vkp_app.vkp_telegram
 
 import requests
-from bs4 import BeautifulSoup  
+from bs4 import BeautifulSoup
 from time import sleep
 from random import randint
-from tqdm import tqdm
 import datetime
 import json
-
 import re
-
-
 import traceback
 import logging
-
 import os
-
 from collections import OrderedDict
 
+# Настройка логгера
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('vkp_mon_gike')
 
-
-
-cookies = {
-    
-}
-
-headers = {
+# Конфигурация запросов
+COOKIES = {}
+HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8',
-    'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3',
-    # 'Accept-Encoding': 'gzip, deflate, br, zstd',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-    'Sec-Fetch-User': '?1',
-    'Sec-GPC': '1',
-    'Priority': 'u=0, i',
 }
 
-mkrf_headers = {
+MKRF_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3',
-    # 'Accept-Encoding': 'gzip, deflate, br, zstd',
-    'Connection': 'keep-alive',
-    'Referer': 'https://culture.gov.ru/documents/',
-    'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'same-origin',
-    'Sec-Fetch-User': '?1',
-    'Sec-GPC': '1',
-    'Priority': 'u=0, i',
 }
 
-
-mkrf_params = {
+MKRF_PARAMS = {
     'DOCS[KEYWORDS]': 'санкт-',
     'DOCS[VIEW_DOCUMENTS]': '',
     'DOCS[AUTHORITY]': '',
@@ -73,218 +43,187 @@ mkrf_params = {
     'DOCS[NUMBER]': '',
 }
 
+def process_kgiop_expertise(link: str, link_caption: str = "") -> None:
+    """Обрабатывает одну экспертизу с сайта КГИОП."""
+    if bus.stop:
+        logger.info('Обнаружен флаг остановки в модуле ГИКЕ')
+        raise bus.UserStopError()
 
+    if db.is_post_exists(link):
+        logger.info(f"Документ по ссылке {link} уже есть в архиве, пропускаем")
+        return
 
-#https://sky.pro/media/udalenie-soderzhimogo-papki-v-python/
+    try:
+        logger.info(f"Загружаем экспертизу: {link}")
+        img, data = vkp_app.vkp_extract.getgike(link, cookies=COOKIES, headers=HEADERS)
+        
+        txt = '__Выдержки для предварительного просмотра__. '
+        for el in data:
+            txt += f"{el}:\n\n{data[el]}\n\n"
+        
+        if data.get('Проект предусматривает'):
+            data4telegram = OrderedDict([('Пытаемся определить, что предусматривается проектом', 
+                                       data['Проект предусматривает'])])
+        elif data.get('По объекту'):
+            data4telegram = OrderedDict([('Пытаемся определить, что предусматривается проектом', 
+                                       data['По объекту'])])
+        else:
+            data4telegram = OrderedDict()
+
+        if not link_caption:
+            link_caption = f"Экспертиза {link[:225]}..."
+
+        txt = f"{link}\n\n{txt}"
+        image_path = db.add_post('gike', link, txt, img)
+        if image_path:
+            unique_filename = os.path.splitext(os.path.basename(image_path))[0]
+            vkp_app.vkp_telegram.to_telegram("gike", img, link, link_caption, data4telegram, unique_filename)
+        else:
+            logger.error(f"Не удалось сохранить экспертизу {link} в базу данных")
+
+    except Exception as e:
+        logger.error(f"Ошибка при обработке экспертизы {link}: {str(e)}")
+        logger.error(traceback.format_exc())
+
+def process_kgiop_page(year: int) -> None:
+    """Обрабатывает страницу с экспертизами КГИОП за указанный год."""
+    try:
+        logger.info(f"Запрашиваем страницу экспертиз за {year} год")
+        url = f'https://kgiop.gov.spb.ru/deyatelnost/zaklyucheniya-gosudarstvennyh-istoriko-kulturnyh-ekspertiz/gosudarstvennye-istoriko-kulturnye-ekspertizy-za-{year}-g/'
+        response = requests.get(url, cookies=COOKIES, headers=HEADERS, verify=False)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, "lxml")
+
+        # Выбираем только нужные ссылки при помощи лямбды
+        links = soup.find_all('a', href=lambda href: href 
+                              and ('disk.yandex.ru' in href
+                                    or '/media/uploads/userfiles/' in href))
+        logger.info(f"Найдено {len(links)} ссылок. Начинаем обработку")
+        
+        for i, link in enumerate(links):
+            if bus.stop:
+                logger.info("Обнаружен флаг остановки при обработке КГИОП")
+                raise bus.UserStopError()
+                
+            try:
+                link_caption = ''
+                if "Срок рассмотрения обращений" in link.text:
+                    parent_td = link.find_parent('td')
+                    if parent_td:
+                        prev_td = parent_td.find_previous_sibling('td')
+                        if prev_td:
+                            link_caption = f"Экспертиза {prev_td.text} (часть составной экспертизы)"
+                            logger.debug(f"Взят заголовок ссылки сбоку: {link_caption}")
+                
+                if 'disk.yandex.ru' in link['href']:
+                    process_yandex_disk_link(link, link_caption)
+                elif '/media/uploads/userfiles/' in link['href']:
+                    process_kgiop_direct_link(link, link_caption)
+                
+                sleep(randint(5, 10))
+            
+            except bus.UserStopError:
+                raise  # Пробрасываем выше
+            except Exception as e:
+                logger.error(f"Ошибка обработки ссылки КГИОП: {str(e)}")
+                logger.error(traceback.format_exc())
+
+    except requests.RequestException as e:
+        logger.error(f"Ошибка при запросе страницы КГИОП: {str(e)}")
+    except bus.UserStopError:
+        logger.info("Обработка экспертиз КГИОП остановлена пользователем")
+        raise  # Пробрасываем выше
+    except Exception as e:
+        logger.error(f"Неизвестная ошибка при обработке страницы КГИОП: {str(e)}")
+        logger.error(traceback.format_exc())
+
+    logger.info(f"Обработка ГИКЭ завершена")
+
+def process_yandex_disk_link(link, link_caption):
+    """Обрабатывает ссылку на Яндекс.Диск."""
+    logger.info(f"Начало обработки экспертизы с Яндекс.Диска по ссылке {link}")
+    try:
+        apilink = f'https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key={link["href"]}'
+        response_json = requests.get(apilink).json()
+        download_link = response_json.get("href")
+        
+        if download_link:
+            process_kgiop_expertise(download_link, link_caption or f"Экспертиза {link.text}")
+    except Exception as e:
+        logger.error(f"Ошибка обработки ссылки Яндекс.Диск {link['href']}: {str(e)}")
+
+def process_kgiop_direct_link(link, link_caption):
+    """Обрабатывает прямую ссылку на файл КГИОП."""
+    logger.info(f"Начало обработки экспертизы по прямой ссыклке {link}")
+    try:
+        direct_link = f"https://kgiop.gov.spb.ru{link['href']}"
+        process_kgiop_expertise(direct_link, link_caption or f"Экспертиза {link.text}")
+    except Exception as e:
+        logger.error(f"Ошибка обработки прямой ссылки КГИОП {link['href']}: {str(e)}")
+
+def process_mkrf_expertises():
+    """Обрабатывает экспертизы с сайта Минкульта."""
+    try:
+        logger.info("Начинаем обработку экспертиз на сайте Минкульта")
+        response = requests.get('https://culture.gov.ru/documents/', params=MKRF_PARAMS, headers=MKRF_HEADERS)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, "lxml")
+        links = soup.find_all('a')
+        logger.info(f"Найдено {len(links)} ссылок на Минкульте")
+        
+        for i, link in enumerate(links[:20]):  # Ограничиваем количество для теста
+            if bus.stop:
+                logger.info("Обнаружен флаг остановки в модуле ГИКЕ")
+                raise bus.UserStopError()
+                
+            if ("Акт" in link.text and 
+                "государственной историко-культурной экспертизы" in link.text and 
+                'водка предложений' not in link.text):
+                
+                try:
+                    process_single_mkrf_expertise(link)
+                except bus.UserStopError:
+                    raise  # Пробрасываем исключение выше
+                except Exception as e:
+                    logger.error(f"Ошибка обработки экспертизы: {str(e)}")
+                    logger.error(traceback.format_exc())
+                
+                sleep(randint(5, 10))
+
+    except requests.RequestException as e:
+        logger.error(f"Ошибка при запросе страницы Минкульта: {str(e)}")
+    except bus.UserStopError:
+        logger.info("Обработка экспертиз Минкульта остановлена пользователем")
+        raise  # Пробрасываем исключение выше
+    except Exception as e:
+        logger.error(f"Неизвестная ошибка при обработке страницы Минкульта: {str(e)}")
+        logger.error(traceback.format_exc())
+
 
 def start_gike():
-   
-    ##НАЧАЛО БЛОКА ДЛЯ ОТЛАДКИ ПО ВАРИАНТУ С ГОТОВОЙ ССЫЛКОЙ (ОБЫЧНО ДОЛЖЕН БЫТЬ ЗАКОММЕНТИРОВАН)
-    #ЗАГРУЗКА ЭКСПЕРТИЗЫ БУДЕТ ВЫПОЛНЕНА ПО ЗАДАННОЙ В ЭТОМ БЛОКЕ ССЫЛКЕ, РЕЗУЛЬТАТ ОТПРАВЛЕН ТОЛЬКО ОДНОМУ ПОЛЬЗОВАТЕЛЮ
-    # print('РЕЖИМ ОТЛАДКИ С ГОТОВОЙ ССЫЛКОЙ')
-    # link='https://kgiop.gov.spb.ru/media/uploads/userfiles/2024/12/19/1_fi3f3V2.pdf'
-    # link_caption='земельного участка по адресу: Санкт-Петербург, город Колпино, Загородная улица, участок 72 (восточнее дома 35 литера А по Загородной улице) (кадастровый номер: 78:37:1722003:5)'
-    # img, data=vkp_app.vkp_extract.getgike (link, cookies=cookies, headers=headers, short_link='disk.yandex.ru')    
-    # rgb = Image.fromarray(img)
-    # caption = text_shorter (data, link, link_caption) 
-    # unique_filename='cafe1fe8-d12f-4275-9cb1-272912f5e4d6.jpg'
-    # markup = telebot.types.InlineKeyboardMarkup()
-    # button1 = telebot.types.InlineKeyboardButton(text='Узнать подробности и загрузить', callback_data='describe:{}'.format(unique_filename))
-    # markup.row(button1)
-    # bot.send_photo('Код пользователя', rgb, 'ОТЛАДКА ' + caption, reply_markup=markup, parse_mode="html")
+    """Основная функция мониторинга ГИКЭ."""
+    logger.info("=== НАЧАЛО РАБОТЫ start_gike() ===")
+    logger.info(f"Состояние флагов: stop={vkp_app.vkp_bus.stop}, "
+                f"finish={vkp_app.vkp_bus.finish}, "
+                f"force_run={getattr(vkp_app.vkp_bus, 'force_run', False)}")
     
-    # return
-    ##КОНЕЦ БЛОКА ДЛЯ ОТЛАДКИ
-    
-    global bus
-    log('ВКП ГИКЭ', type_='info')
-    
-    
-    #Сначала работаем с экспертизами КГИОП
-    log('Запрашиваем страницу экспертиз', type_='info')
+    try:
+        # Обработка экспертиз КГИОП
+        current_year = datetime.datetime.now().year
+        logger.info(f"Обработка экспертиз КГИОП за {current_year} год")
+        process_kgiop_page(current_year)
         
+        # Обработка экспертиз Минкульта
+        logger.info("Обработка экспертиз Минкульта")
+        process_mkrf_expertises()
         
-    #Получаем нынешний год для подстановки в ссылку
-    dt = datetime.datetime.now()
-    year_only = dt.year
-        
-    response = requests.get('https://kgiop.gov.spb.ru/deyatelnost/zaklyucheniya-gosudarstvennyh-istoriko-kulturnyh-ekspertiz/gosudarstvennye-istoriko-kulturnye-ekspertizy-za-{year_only}-g/'.format(year_only=year_only),
-    cookies=cookies,
-    headers=headers, verify=False)
-    response.raise_for_status()
-    response=response.text
-    soup = BeautifulSoup(response, "lxml")
-    eventtypesall = soup.find_all('a')
-    log("Список из %s ссылок получен. Начинаем загрузку экспертиз"%(len(eventtypesall)), type_="info")
-    sleep(1)
-    index=0
-    for i in eventtypesall: 
-        link_capt='' #Титул экспертизы
-        if bus.stop==True: #Обнаружен флаг остановки
-            log('Обнаружен флаг остановки в модуле ГИКЕ', type_='info')
-            raise bus.UserStopError()
-        if "Срок рассмотрения обращений" in i.text in i.text:
-            link_capt='Экспертиза ' + i.find_parent('td').find_previous_sibling('td').text + ' (часть составной экспертизы)'
-            print('Взят заголовок ссылки сбоку: ', link_capt)
-        if "Срок рассмотрения обращений" in i.text in i.text:
-            link_capt='Экспертиза ' + i.find_parent('td').find_previous_sibling('td').text + ' (часть составной экспертизы)'
-            print('Взят заголовок ссылки сбоку: ', link_capt)    
-        if 'disk.yandex.ru' in i['href']: #если файл выложен на яндекс-диск
-            index+=1
-            if index > 19:
-                break
-            log ('Загружаем экспертизу № %s' % (str(index)), type_='info')
-            log (i.text)
-            apilink='https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=%s' % (i['href']) #Адрес страницы скачивания подставляется в поле ключа API для загрузки публичного файла https://github.com/sermelipharo/YandexDown/blob/main/yandown.py
-            response_json=requests.get(apilink).json()
-            link = response_json.get("href")
-       		
-            #Есть ли уже в архиве этот документ?
-            if db.indb(i['href']): #Проверяем исходную ссылку, а не ссылку яндекса, поскольку последняя меняется 
-                log ("Документ по ссылке " + link + "уже есть в архиве, пропускаем его", type_='info')
-                continue
-        
-            log (link)
-          
-            
-            img, data=vkp_app.vkp_extract.getgike (link, cookies=cookies, headers=headers, short_link=i['href']) 
-            if link_capt=='': link_capt='Экспертиза ' + i.text
-            
-            
-            txt='__Выдержки для предварительного просмотра__. '
-            for el in data:
-                txt=txt+ el + ':' + '\n\n' + data[el]
-            if data['Проект предусматривает']!='':
-                data4telegram=OrderedDict([('Пытаемся определить, что предусматривается проектом', data['Проект предусматривает'])])
-            elif data['По объекту']!='': data4telegram=OrderedDict([('Пытаемся определить, что предусматривается проектом', data['По объекту'])])   
-            else: data4telegram=OrderedDict()               
-
-            #Если экспертиза состоит из нескольких файлов, ее названия нет в тексте ссылки
-            if "Срок рассмотрения обращений" in i.text and "Часть 1" in i.text:
-                txt= 'Составная экспертиза. Часть 1.' +'\n\n' + txt
-            elif "Срок рассмотрения обращений" in i.text and "Часть 2" in i.text:
-                txt= 'Составная экспертиза. Часть 2.' +'\n\n' + txt    
-            else:         
-                txt= 'Экспертиза ' + i.text[:225] +'...\n\n' + txt
-          
-            
-            txt=i['href'] + '\n\n' + txt 
-            
-            
-            unique_filename=db.todb('gike', i['href'], txt, img) #Записываем исходную ссылку, а не ссылку яндекса, поскольку последняя меняется 
-            mon_type="gike"
-            vkp_app.vkp_telegram.to_telegram(mon_type, img, i['href'], link_capt, data4telegram, unique_filename)
-           
-            print(txt)
-            #print('Отправляем в телеграм')
-            #vkp_app.vkp_telegram.send_photo("-1002424968506", "temp_thumbnail.jpg", image_caption=txt[:1024])
-            
-            print('Ожидание следующего запроса к сайту')
-            sleep(randint(5,10))
-            
-                 
-        elif '/media/uploads/userfiles/' in i['href']: #если файл выложен на сайте кгиоп
-            index+=1
-            if index > 19:
-                break
-            log ('Загружаем экспертизу № %s' % (str(index)), type_='info')
-            link="https://kgiop.gov.spb.ru" + i['href']
-        
-            #Есть ли уже в архиве этот документ?
-            if db.indb(link): 
-                log ("Документ по ссылке " + link + "уже есть в архиве, пропускаем его", type_='info')
-                continue
-        
-            log (link)
-            #input()
-            img, data=vkp_app.vkp_extract.getgike (link, cookies=cookies, headers=headers) 
-                        
-            txt='__Выдержки для предварительного просмотра__.'
-            for el in data:
-                txt=txt+ el + ':' + '\n\n' + data[el]
-            
-            
-            if data['Проект предусматривает']!='':
-                data4telegram=OrderedDict([('Пытаемся определить, что предусматривается проектом', data['Проект предусматривает'])])
-            elif data['По объекту']!='': data4telegram=OrderedDict([('Пытаемся определить, что предусматривается проектом', data['По объекту'])])   
-            else: data4telegram=OrderedDict()       
-            
-            
-            
-            #Если экспертиза состоит из нескольких файлов, ее названия нет в тексте ссылки
-            if "Срок рассмотрения обращений" in i.text and "Часть 1" in i.text:
-                txt= 'Составная экспертиза. Часть 1.' +'\n\n' + txt
-            elif "Срок рассмотрения обращений" in i.text and "Часть 2" in i.text:
-                txt= 'Составная экспертиза. Часть 2.' +'\n\n' + txt    
-            else:         
-                txt= 'Экспертиза ' + i.text[:200] +'...\n\n' + txt
-            
-            
-            txt= link + '\n\n' + txt 
-            
-            log (txt)
-            #unique_filename='' #заглушка
-            unique_filename=db.todb('gike', link, txt, img)
-            if link_capt=='': link_capt= 'Экспертиза ' + i.text
-            mon_type="gike"
-            vkp_app.vkp_telegram.to_telegram(mon_type, img, link, link_capt, data4telegram, unique_filename)
-
-
-
-            print('Ожидание следующего запроса к сайту')
-            sleep(randint(5,10))
-            
-    #Теперь занимаемся экспертизами Минкульта        
-    
-    print ('Начинаем обработку историко-культурных экспертиз на сайте Минкульта')
-    
-    response = requests.get('https://culture.gov.ru/documents/', params=mkrf_params, headers=mkrf_headers)
-
-    response.raise_for_status()
-
-    soup = BeautifulSoup(response.content, "lxml")
-    
-    sleep(2)
-    index=0
-    
-    eventtypesall = soup.find_all('a')
-    print("Список из %s ссылок получен. Начинаем загрузку экспертиз"%(len(eventtypesall)))
-
-    for i in eventtypesall: 
-        if "Акт" in i.text and "государственной историко-культурной экспертизы" in i.text and not 'водка предложений' in i.text:
-            index+=1
-            print ('Загружаем экспертизу № %s' % (str(index)))
-            #print(i.text)
-            link="https://culture.gov.ru" + i['href']
-            if db.indb(link): #Проверяем, есть ли в базе
-                print ("Документ по ссылке " + link + "уже есть в архиве, пропускаем его")
-                continue
-            
-            #Загружаем промежуточную страницу
-            response = requests.get(link, params=mkrf_params, headers=mkrf_headers)
-            soup2=BeautifulSoup(response.content, "lxml")
-            eventtypesall2 = soup2.find_all('a')
-            for j in  eventtypesall2:
-                if 'pdf' in j['href'] and j.findChild().text == 'скачать документ':
-                    link2 = "https://culture.gov.ru" + j['href']
-                    print (link2)
-            sleep(2)
-            img, data=vkp_app.vkp_extract.getgike (link2, cookies=cookies, headers=mkrf_headers) 
-            
-            txt=''
-            for el in data:
-                txt=txt+ el + ':' + '\n\n' + data[el] + '\n\n'
-            txt= link + '\n\n' + txt 
-            
-            if data['Проект предусматривает']!='':
-                data4telegram=OrderedDict([('Пытаемся определить, что предусматривается проектом', data['Проект предусматривает'])])
-            elif data['По объекту']!='': data4telegram=OrderedDict([('Пытаемся определить, что предусматривается проектом', data['По объекту'])])   
-            else: data4telegram=OrderedDict()          
-
-            print(txt)
-            unique_filename=db.todb('gike', link, txt, img)
-            link_capt=i.text
-            mon_type="gike"
-            vkp_app.vkp_telegram.to_telegram(mon_type, img, link, link_capt, data4telegram, unique_filename)
-            print('Ожидание следующего запроса к сайту')
-            sleep(randint(5,10))
+    except bus.UserStopError:
+        logger.info("Мониторинг ГИКЭ остановлен по запросу пользователя")
+        return
+    except Exception as e:
+        logger.error(f"Критическая ошибка в мониторинге ГИКЭ: {str(e)}")
+        logger.error(traceback.format_exc())
+    finally:
+        logger.info("=== ЗАВЕРШЕНИЕ start_gike() ===")

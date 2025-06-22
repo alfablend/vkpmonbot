@@ -9,3 +9,6 @@ token.txt
 *.py[cod]
 __pycache__/
 *.csv#
+app.log
+debug.log
+vkp_app/database/vkp_database.db
