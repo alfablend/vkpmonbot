@@ -1,9 +1,8 @@
 *.pdf
-*.jpg
 *.json
 *.csv
 /tmp/
-vkp_app/database/gike_files/*
+vkp_app/database
 temp_txt.txt
 token.txt
 *.py[cod]
@@ -11,4 +10,3 @@ __pycache__/
 *.csv#
 app.log
 debug.log
-vkp_app/database/vkp_database.db

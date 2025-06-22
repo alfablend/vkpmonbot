@@ -220,7 +220,7 @@ def get_image(subpath):
     except Exception as e:
         logger.error(f"Критическая ошибка при загрузке изображения: {str(e)}", exc_info=True)
         abort(500, description="Внутренняя ошибка сервера")
-        
+
 @app.route('/repair')
 def repair():
     """Ремонт базы данных"""
@@ -281,6 +281,7 @@ def index():
         total_mons=len(current_monitors), 
         finish=vkp_app.vkp_bus.finish
     )
+
 
 initialize_app()
 
